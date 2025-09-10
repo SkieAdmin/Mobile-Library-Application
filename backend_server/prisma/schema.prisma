@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  STAFF
+  ADMIN
+}
+
+enum BookStatus {
+  AVAILABLE
+  BORROWED
+  RESERVED
+  MAINTENANCE
+}
+
+enum BorrowStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  firstName       String
+  lastName        String
+  studentId       String?   @unique
+  role            UserRole  @default(STUDENT)
+  isActive        Boolean   @default(true)
+  registrationDate DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  borrows         Borrow[]
+  reservations    Reservation[]
+  
+  @@map("users")
+}
+
+model Book {
+  id              String      @id @default(cuid())
+  isbn            String      @unique
+  title           String
+  author          String
+  publisher       String
+  publishedYear   Int
+  category        String
+  description     String?     @db.Text
+  totalCopies     Int         @default(1)
+  availableCopies Int         @default(1)
+  status          BookStatus  @default(AVAILABLE)
+  location        String?
+  imageUrl        String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  borrows         Borrow[]
+  reservations    Reservation[]
+  
+  @@map("books")
+}
+
+model Borrow {
+  id              String        @id @default(cuid())
+  userId          String
+  bookId          String
+  borrowDate      DateTime      @default(now())
+  dueDate         DateTime
+  returnDate      DateTime?
+  status          BorrowStatus  @default(ACTIVE)
+  renewalCount    Int           @default(0)
+  fineAmount      Decimal?      @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book            Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  @@map("borrows")
+}
+
+model Reservation {
+  id              String    @id @default(cuid())
+  userId          String
+  bookId          String
+  reservationDate DateTime  @default(now())
+  expiryDate      DateTime
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book            Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, bookId])
+  @@map("reservations")
+}
+
+model Analytics {
+  id              String    @id @default(cuid())
+  date            DateTime  @default(now()) @db.Date
+  totalBorrows    Int       @default(0)
+  totalReturns    Int       @default(0)
+  totalReservations Int     @default(0)
+  activeUsers     Int       @default(0)
+  overdueBooks    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@unique([date])
+  @@map("analytics")
+}
