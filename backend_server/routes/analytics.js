@@ -21,6 +21,7 @@ router.get('/dashboard', authenticate, authorize('STAFF', 'ADMIN'), async (req, 
       availableBooks,
       recentBorrows,
       recentReturns,
+      activeMembers,
       popularBooks,
       categoryStats,
       dailyStats
@@ -49,27 +50,48 @@ router.get('/dashboard', authenticate, authorize('STAFF', 'ADMIN'), async (req, 
           returnDate: { gte: sevenDaysAgo }
         }
       }),
+      prisma.user.count({
+        where: {
+          isActive: true,
+          OR: [
+            {
+              borrows: {
+                some: {
+                  borrowDate: { gte: thirtyDaysAgo }
+                }
+              }
+            },
+            {
+              reservations: {
+                some: {
+                  reservationDate: { gte: thirtyDaysAgo }
+                }
+              }
+            }
+          ]
+        }
+      }),
       prisma.borrow.groupBy({
         by: ['bookId'],
-        _count: { _all: true },
+        _count: true,
         where: {
           borrowDate: { gte: thirtyDaysAgo }
         },
         orderBy: {
           _count: {
-            _all: 'desc'
+            bookId: 'desc'
           }
         },
         take: 10
       }),
       prisma.book.groupBy({
         by: ['category'],
-        _count: { _all: true },
+        _count: true,
         _sum: { totalCopies: true, availableCopies: true }
       }),
       prisma.borrow.groupBy({
         by: ['borrowDate'],
-        _count: { _all: true },
+        _count: true,
         where: {
           borrowDate: { gte: thirtyDaysAgo }
         },
@@ -93,12 +115,22 @@ router.get('/dashboard', authenticate, authorize('STAFF', 'ADMIN'), async (req, 
         });
         return {
           ...book,
-          borrowCount: item._count._all
+          borrowCount: item._count
         };
       })
     );
 
+    // Flatten the response structure for mobile app compatibility
     const dashboardData = {
+      // Basic stats that mobile app expects
+      totalBooks,
+      totalUsers,
+      availableBooks: availableBooks._sum.availableCopies || 0,
+      borrowedBooks: activeBorrows,
+      reservedBooks: totalReservations,
+      activeMembers,
+      
+      // Additional detailed data for potential future use
       summary: {
         totalBooks,
         totalUsers,
@@ -112,14 +144,14 @@ router.get('/dashboard', authenticate, authorize('STAFF', 'ADMIN'), async (req, 
       popularBooks: popularBooksWithDetails,
       categoryStats: categoryStats.map(cat => ({
         category: cat.category,
-        totalBooks: cat._count._all,
+        totalBooks: cat._count,
         totalCopies: cat._sum.totalCopies,
         availableCopies: cat._sum.availableCopies,
         borrowedCopies: cat._sum.totalCopies - cat._sum.availableCopies
       })),
       dailyBorrowStats: dailyStats.map(day => ({
         date: day.borrowDate,
-        borrowCount: day._count._all
+        borrowCount: day._count
       }))
     };
 
@@ -267,7 +299,7 @@ router.get('/trends', authenticate, authorize('STAFF', 'ADMIN'), [
 
     const borrowTrends = await prisma.borrow.groupBy({
       by: ['borrowDate'],
-      _count: { _all: true },
+      _count: true,
       where: {
         borrowDate: { gte: daysAgo }
       },
@@ -278,7 +310,7 @@ router.get('/trends', authenticate, authorize('STAFF', 'ADMIN'), [
 
     const returnTrends = await prisma.borrow.groupBy({
       by: ['returnDate'],
-      _count: { _all: true },
+      _count: true,
       where: {
         returnDate: { 
           gte: daysAgo,
@@ -292,7 +324,7 @@ router.get('/trends', authenticate, authorize('STAFF', 'ADMIN'), [
 
     const reservationTrends = await prisma.reservation.groupBy({
       by: ['reservationDate'],
-      _count: { _all: true },
+      _count: true,
       where: {
         reservationDate: { gte: daysAgo }
       },
@@ -304,15 +336,15 @@ router.get('/trends', authenticate, authorize('STAFF', 'ADMIN'), [
     res.json({
       borrowTrends: borrowTrends.map(trend => ({
         date: trend.borrowDate,
-        count: trend._count._all
+        count: trend._count
       })),
       returnTrends: returnTrends.map(trend => ({
         date: trend.returnDate,
-        count: trend._count._all
+        count: trend._count
       })),
       reservationTrends: reservationTrends.map(trend => ({
         date: trend.reservationDate,
-        count: trend._count._all
+        count: trend._count
       }))
     });
   } catch (error) {
